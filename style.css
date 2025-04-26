@@ -1,0 +1,30 @@
+#youtube-codec-info-overlay {
+    position: absolute;
+    bottom: 10px; /* コントロールバーの上あたりになるように調整 */
+    left: 10px;
+    background-color: rgba(0, 0, 0, 0.75); /* 少し濃く */
+    color: #fff;
+    padding: 5px 10px; /* 少し余白を増やす */
+    border-radius: 4px;
+    font-size: 13px; /* 少し大きく */
+    font-family: 'YouTube Noto', Roboto, Arial, Helvetica, sans-serif;
+    z-index: 9999;
+    pointer-events: none;
+    line-height: 1.5; /* 行間調整 */
+    text-shadow: 1px 1px 2px rgba(0,0,0,0.9); /* 影を強く */
+    /* display: none; */ /* JSで制御 */
+    max-width: 300px; /* 長くなりすぎないように */
+    transition: opacity 0.3s ease; /* フェードイン/アウト */
+    opacity: 1;
+  }
+  
+  /* 非表示にする場合 (JSでクラスを付け外しする方が良いかも) */
+  /* #youtube-codec-info-overlay:empty,
+  #youtube-codec-info-overlay[style*="display: none"] {
+    opacity: 0;
+  } */
+  
+  /* フルスクリーン時の位置調整 */
+  .html5-video-player.ytp-fullscreen #youtube-codec-info-overlay {
+    bottom: 60px; /* フルスクリーン時はコントロールバーが高くなるため調整 */
+  }
