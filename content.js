@@ -1,95 +1,123 @@
-// content.js (修正版 v2)
-
-console.log("YouTube Codec Info extension loaded. v2");
+// content.js (Release v3.3 - Robust Dynamic Position)
+console.log("YouTube Codec Info extension loaded. v3.3"); // Initial load message
 
 let infoDisplay = null;
 let lastVideoId = null;
-let checkInterval = null; // setIntervalのIDを保持
-let observer = null; // MutationObserver用
+let checkInterval = null;
+let observer = null;
+let currentSettings = { isVisible: true, overlaySize: 13 };
 
-// ページコンテキストで実行するスクリプトを挿入する関数
+// Inject script into page context
 function injectScript(filePath) {
-  // 既に挿入されていないか確認
   const existingScript = document.getElementById('codec-info-injector-script');
-  if (existingScript) {
-      // console.log("[Content] Injector script already present.");
-      // 既に存在する場合でも、メッセージリスナーが機能するように念のため再挿入を試みるか、
-      // または何もしない。ここでは何もしない戦略をとる。
-      return;
-  }
+  if (existingScript) return;
   const script = document.createElement('script');
-  script.id = 'codec-info-injector-script'; // IDを付与して重複挿入を防ぐ
+  script.id = 'codec-info-injector-script';
   script.src = chrome.runtime.getURL(filePath);
-  script.onload = function() {
-    console.log(`[Content] ${filePath} injected and loaded.`);
-    // this.remove(); // スクリプト実行後も残しておく（デバッグのため）
-  };
-  script.onerror = function() {
-      console.error(`[Content] Failed to load ${filePath}`);
-  };
+  script.onload = function() { /* console.log(`[Content] ${filePath} injected and loaded.`); */ }; // Log commented out
+  script.onerror = function() { console.error(`[Content] Failed to load ${filePath}`); };
   (document.head || document.documentElement).appendChild(script);
 }
 
-// UI要素を作成または取得する関数
+// Get or create the overlay element
 function getOrCreateOverlay() {
   const existingOverlay = document.getElementById('youtube-codec-info-overlay');
   if (existingOverlay) {
       infoDisplay = existingOverlay;
-      // プレイヤーが再生成された場合に備えて、正しい位置にあるか確認・移動
       const playerContainer = document.querySelector('#movie_player');
       if (playerContainer && !playerContainer.contains(infoDisplay)) {
-          console.log("[Content] Moving overlay to current player container.");
+          // console.log("[Content] Moving overlay to current player container."); // Log commented out
           playerContainer.appendChild(infoDisplay);
       }
+      applySettings(currentSettings); // Ensure settings are applied
       return infoDisplay;
   }
-
-  const playerContainer = document.querySelector('#movie_player'); // プレイヤーのコンテナ要素
-  if (!playerContainer) {
-       // console.log("[Content] Player container not found for overlay creation.");
-       return null;
-  }
+  const playerContainer = document.querySelector('#movie_player');
+  if (!playerContainer) return null;
 
   infoDisplay = document.createElement('div');
   infoDisplay.id = 'youtube-codec-info-overlay';
-  infoDisplay.style.display = 'none'; // 初期状態は非表示
-  playerContainer.appendChild(infoDisplay); // プレイヤーコンテナに追加
-  console.log("[Content] Codec info overlay created.");
+  infoDisplay.style.display = currentSettings.isVisible ? 'block' : 'none';
+  infoDisplay.style.fontSize = `${currentSettings.overlaySize}px`;
+  infoDisplay.innerHTML = '';
+  playerContainer.appendChild(infoDisplay);
+  // console.log("[Content] Codec info overlay created."); // Log commented out
   return infoDisplay;
 }
 
-// コーデック情報を取得して表示を更新する関数
+// Adjust overlay position based on controls visibility
+function adjustOverlayPosition() {
+    const overlay = document.getElementById('youtube-codec-info-overlay');
+    if (!overlay || overlay.style.display === 'none') return;
+
+    const player = document.getElementById('movie_player');
+    if (!player) return;
+
+    const controls = player.querySelector('.ytp-chrome-bottom');
+    const progressBarContainer = player.querySelector('.ytp-progress-bar-container');
+
+    const defaultBottom = '10px';
+    const marginAboveControls = 5;
+
+    let targetBottom = defaultBottom; // Default to bottom left
+
+    // Only adjust if controls are found
+    if (controls && progressBarContainer) {
+        let isControlsVisible = false;
+        let controlsHeight = 0;
+
+        try {
+            const controlsStyle = window.getComputedStyle(controls);
+            const controlsOpacity = parseFloat(controlsStyle.opacity);
+            const controlsOffsetHeight = controls.offsetHeight;
+
+            isControlsVisible = controlsOpacity > 0.1 && controlsOffsetHeight > 10;
+
+            if (isControlsVisible) {
+                controlsHeight = controlsOffsetHeight;
+                targetBottom = `${controlsHeight + marginAboveControls}px`; // Position above controls
+            }
+        } catch (e) {
+            console.error("[AdjustPos] Error accessing control styles/height:", e);
+            // Revert to default on error
+            targetBottom = defaultBottom;
+        }
+    } else {
+        // If controls are not found, ensure it's at the default bottom
+        targetBottom = defaultBottom;
+    }
+
+    // Update style only if needed
+    if (overlay.style.bottom !== targetBottom) {
+        overlay.style.bottom = targetBottom;
+    }
+}
+
+// Request codec info from inject script
 function updateCodecInfo() {
-  // console.log("[Content] Attempting to update codec info...");
   const player = document.getElementById('movie_player');
-  const overlay = getOrCreateOverlay(); // 毎回取得を試みる
+  const overlay = getOrCreateOverlay();
+  if (!player || !overlay) return;
 
-  if (!player || !overlay) {
-    // console.log("[Content] Player or overlay not available yet.");
-    return;
-  }
-
-  // inject.js に情報取得を依頼
-  // console.log("[Content] Posting GET_CODEC_INFO message to window.");
   try {
       window.postMessage({ type: "GET_CODEC_INFO" }, "*");
   } catch (e) {
       console.error("[Content] Error posting message:", e);
-      // postMessageが失敗する場合、inject.jsがロードされていない可能性
-      injectScript('inject.js'); // 再度injectを試みる
+      injectScript('inject.js');
   }
 
-
-  // 現在の動画IDを取得 (変更チェック用)
   const currentVideoId = getCurrentVideoId();
   if (currentVideoId && currentVideoId !== lastVideoId) {
-     console.log(`[Content] Video changed: ${lastVideoId} -> ${currentVideoId}`);
+    // console.log(`[Content] Video changed: ${lastVideoId} -> ${currentVideoId}`); // Log commented out
      lastVideoId = currentVideoId;
-     if (overlay) overlay.style.display = 'none'; // 動画が変わったら一旦非表示
+     if (overlay) {
+        overlay.innerHTML = '';
+        overlay.style.display = 'none';
+     }
   }
 }
 
-// 現在の動画IDを取得するヘルパー関数
+// Get current video ID from URL
 function getCurrentVideoId() {
   if (window.location.pathname === '/watch') {
     const params = new URLSearchParams(window.location.search);
@@ -98,243 +126,224 @@ function getCurrentVideoId() {
   return null;
 }
 
-// inject.jsからのメッセージを受け取るリスナー
+// Listen for results from inject script
 window.addEventListener("message", (event) => {
-  // We only accept messages from ourselves (inject script via window)
-  if (event.source !== window || !event.data || event.data.type !== "CODEC_INFO_RESULT") {
-    // 他の拡張機能などからのメッセージは無視
-    // console.log("[Content] Ignoring message:", event.data);
-    return;
-  }
+  if (event.source !== window || !event.data || event.data.type !== "CODEC_INFO_RESULT") return;
 
-  console.log("[Content] Received CODEC_INFO_RESULT:", event.data.payload);
   const data = event.data.payload;
-  const overlay = getOrCreateOverlay(); // 再度取得
-
-  if (!overlay) {
-      console.warn("[Content] Overlay not found when receiving result.");
-      return;
-  }
+  const overlay = getOrCreateOverlay();
+  if (!overlay) return;
 
   if (data) {
     try {
-        // 情報が見つからない場合は 'N/A' や空文字になる可能性があるため、デフォルト値を設定
         const videoQuality = data.qualityLabel || data.resolution || (data.height ? `${data.height}p` : '');
         const videoFps = data.fps ? `@${data.fps}` : '';
-        const videoCodec = data.videoCodec?.split('.')[0] || 'N/A'; // avc1.xxxxx -> avc1
-        const audioCodec = data.audioCodec?.split('.')[0] || 'N/A'; // mp4a.xxxxx -> mp4a
-        const colorPrimaries = data.colorInfo?.primaries?.replace('COLOR_PRIMARIES_', '') || ''; // COLOR_PRIMARIES_BT709 -> BT709
+        const videoCodec = data.videoCodec?.split('.')[0] || 'N/A';
+        const audioCodec = data.audioCodec?.split('.')[0] || 'N/A';
+        const colorPrimaries = data.colorInfo?.primaries?.replace('COLOR_PRIMARIES_', '') || '';
         const colorTransfer = data.colorInfo?.transferCharacteristics?.replace('COLOR_TRANSFER_', '') || '';
         const colorMatrix = data.colorInfo?.matrixCoefficients?.replace('COLOR_MATRIX_', '') || '';
-        // 例: BT709 / BT709 / BT709
         const colorInfo = [colorPrimaries, colorTransfer, colorMatrix].filter(Boolean).map(s => s.toUpperCase()).join(' / ');
         const audioSampleRate = data.audioSampleRate ? `${Math.round(parseInt(data.audioSampleRate) / 1000)}kHz` : '';
         const audioChannels = data.audioChannels ? `${data.audioChannels}ch` : '';
-
         let infoParts = [];
-        if (videoCodec !== 'N/A') {
-            let videoStr = `🎬 ${videoCodec}`;
-            if (videoQuality) videoStr += ` (${videoQuality}${videoFps})`;
-            infoParts.push(videoStr);
-        }
-        // if (colorInfo) infoParts.push(`🎨 ${colorInfo}`); // 色空間情報は冗長ならコメントアウト
-        if (audioCodec !== 'N/A') {
-            let audioStr = `🔊 ${audioCodec}`;
-            let audioDetails = [audioSampleRate, audioChannels].filter(Boolean).join(', ');
-            if (audioDetails) audioStr += ` (${audioDetails})`;
-            infoParts.push(audioStr);
-        }
-        if (colorInfo) infoParts.push(`🎨 ${colorInfo}`); // 末尾に移動
-
+        if (videoCodec !== 'N/A') { let videoStr = `🎬 ${videoCodec}`; if (videoQuality) videoStr += ` (${videoQuality}${videoFps})`; infoParts.push(videoStr); }
+        if (audioCodec !== 'N/A') { let audioStr = `🔊 ${audioCodec}`; let audioDetails = [audioSampleRate, audioChannels].filter(Boolean).join(', '); if (audioDetails) audioStr += ` (${audioDetails})`; infoParts.push(audioStr); }
+        if (colorInfo) infoParts.push(`🎨 ${colorInfo}`);
         let statusFlags = [];
         if(data.isLive) statusFlags.push(`🔴 LIVE`);
         if(data.isDash) statusFlags.push(`DASH`);
-        else if (data.isMsl) statusFlags.push(`HLS`); // DASHとHLSは排他的と仮定
-
+        else if (data.isMsl) statusFlags.push(`HLS`);
         let infoText = infoParts.join(' | ');
-        if (statusFlags.length > 0) {
-            // ステータス情報は改行して表示
-            infoText += `<br>${statusFlags.join(' ')}`;
-        }
-
-        // itagやビットレートなどの詳細情報（必要なら追加）
-        // if (data.itag) infoText += `<br>itag: ${data.itag}`;
-        // if (data.bitrate) infoText += `<br>Bitrate: ${Math.round(data.bitrate / 1000)}kbps`;
-
+        if (statusFlags.length > 0) { infoText += `<br>${statusFlags.join(' ')}`; }
 
         if (infoText.trim() === '' || (videoCodec === 'N/A' && audioCodec === 'N/A')) {
-             console.log("[Content] No meaningful codec info to display.");
-             overlay.style.display = 'none'; // 表示する情報がなければ非表示
+             overlay.innerHTML = '';
+             if (currentSettings.isVisible) overlay.style.display = 'none';
         } else {
-            overlay.innerHTML = infoText;
-            overlay.style.display = 'block'; // 情報を表示
-            // console.log("[Content] Overlay updated.");
+             overlay.innerHTML = infoText;
+             overlay.style.display = currentSettings.isVisible ? 'block' : 'none';
+             if (currentSettings.isVisible) {
+                 requestAnimationFrame(adjustOverlayPosition);
+             }
         }
-
     } catch (e) {
         console.error("[Content] Error parsing codec info:", e, data);
-        if (overlay) { // エラー時も表示を試みる
+        if (overlay) {
            overlay.innerHTML = "Codec Info Error";
-           overlay.style.display = 'block';
+           overlay.style.display = currentSettings.isVisible ? 'block' : 'none';
+            if (currentSettings.isVisible) {
+                 requestAnimationFrame(adjustOverlayPosition);
+             }
         }
     }
-
   } else {
-     if (overlay) overlay.style.display = 'none'; // 情報がnullなら非表示
-     console.log("[Content] No codec info payload received from inject script.");
+     if (overlay) overlay.style.display = 'none';
   }
 }, false);
 
-// --- 定期チェックの開始と停止 ---
-function startChecking() {
-    if (checkInterval) return; // 既に実行中なら何もしない
-    console.log("[Content] Starting periodic check...");
-
-    // injectスクリプトがロードされていることを確認してから開始
-    const checkInjectLoaded = setInterval(() => {
-        if (document.getElementById('codec-info-injector-script')) {
-            clearInterval(checkInjectLoaded);
-            console.log("[Content] Inject script confirmed. Starting updates.");
-            // 初回実行（少し遅らせる）
-            setTimeout(() => {
-                if(getCurrentVideoId()) updateCodecInfo(); // 動画ページにいる場合のみ初回実行
-            }, 500); // 少し短縮
-            // 定期実行
-            checkInterval = setInterval(() => {
-                if(getCurrentVideoId()) { // 動画ページにいる場合のみチェック
-                    updateCodecInfo();
-                }
-            }, 3000); // 3秒ごと
-        } else {
-             console.log("[Content] Waiting for inject script to load...");
-             // injectがまだなければ再試行
-             injectScript('inject.js');
-        }
-    }, 500); // 500msごとにinjectスクリプトの存在確認
-
-    // タイムアウトを設定（例: 10秒待ってもinjectされなければ諦める）
-    setTimeout(() => {
-       if (!checkInterval) {
-           clearInterval(checkInjectLoaded);
-           console.error("[Content] Inject script did not load within timeout.");
-       }
-    }, 10000);
+// Apply settings from storage or popup
+function applySettings(settings) {
+  currentSettings = settings;
+  const overlay = document.getElementById('youtube-codec-info-overlay');
+  if (overlay) {
+      const hasContent = overlay.innerHTML.trim() !== '';
+      const shouldBeVisible = settings.isVisible && hasContent;
+      overlay.style.display = shouldBeVisible ? 'block' : 'none';
+      overlay.style.fontSize = `${settings.overlaySize}px`;
+      if (shouldBeVisible) {
+          requestAnimationFrame(adjustOverlayPosition);
+      }
+  }
 }
 
-function stopChecking() {
-    if (checkInterval) {
-        console.log("[Content] Stopping periodic check.");
-        clearInterval(checkInterval);
-        checkInterval = null;
+// Load initial settings from storage
+function loadInitialSettings() {
+  chrome.storage.sync.get({ isVisible: true, overlaySize: 13 }, (items) => {
+    applySettings(items);
+  });
+}
+
+// Listen for messages from popup
+chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+    if (request.type === "SETTINGS_UPDATED") {
+        applySettings(request.payload);
+        sendResponse({ status: "Settings applied" });
     }
-     const overlay = document.getElementById('youtube-codec-info-overlay');
-     if (overlay && overlay.parentNode) {
-         // すぐに消さずに、非表示にするだけにする（再表示がスムーズなように）
-         overlay.style.display = 'none';
-         // overlay.parentNode.removeChild(overlay);
-         // infoDisplay = null;
-     }
-}
-
-// --- プレイヤー要素とURLの監視 (SPA対応) ---
-function observePlayerAndNavigation() {
-    if (observer) observer.disconnect(); // 既存のObserverがあれば停止
-
-    const targetNode = document.body;
-    // #movie_player の追加/削除と、URL変更を引き起こす可能性のある属性変化を監視
-    const config = { childList: true, subtree: true, attributes: true, attributeFilter: ['href', 'src'] };
-
-    let currentHref = document.location.href; // 現在のURLを保持
-
-    observer = new MutationObserver((mutationsList, observer) => {
-        // URLが変わったかチェック (SPAナビゲーション対応)
-        if (document.location.href !== currentHref) {
-            console.log(`[Content] URL changed: ${currentHref} -> ${document.location.href}`);
-            currentHref = document.location.href;
-            handleNavigation();
-        }
-
-        // DOM変更の中にプレイヤー関連のものがないかチェック
-        let playerFound = false;
-        let playerRemoved = false;
-        for(const mutation of mutationsList) {
-             if (mutation.type === 'childList') {
-                // 追加されたノードをチェック
-                mutation.addedNodes.forEach(node => {
-                    if (node.nodeType === 1 && (node.id === 'movie_player' || node.querySelector('#movie_player'))) {
-                        playerFound = true;
-                    }
-                });
-                 // 削除されたノードをチェック
-                 mutation.removedNodes.forEach(node => {
-                     if (node.nodeType === 1 && node.id === 'movie_player') {
-                         playerRemoved = true;
-                     }
-                 });
-            }
-        }
-
-        if (playerFound || playerRemoved) {
-             console.log(`[Content] Player status change detected (Found: ${playerFound}, Removed: ${playerRemoved})`);
-             handleNavigation(); // URL変更と同様の処理を行う
-        }
-    });
-
-    console.log("[Content] Starting MutationObserver for player and navigation.");
-    observer.observe(targetNode, config);
-
-    // 初期状態の処理
-    handleNavigation();
-}
-
-// ナビゲーションやプレイヤー状態の変化に対応する関数
-function handleNavigation() {
-    const isOnWatchPage = getCurrentVideoId();
-    const player = document.getElementById('movie_player');
-
-    if (isOnWatchPage && player) {
-        // 動画ページでプレイヤーが存在する場合
-        if (!checkInterval) { // まだチェックが開始されていなければ
-            console.log("[Content] Watch page and player detected. Initializing...");
-            injectScript('inject.js'); // injectスクリプトを（必要なら）挿入
-            getOrCreateOverlay(); // オーバーレイを（必要なら）作成
-            startChecking();    // 定期チェックを開始
-        } else {
-            // console.log("[Content] Watch page and player confirmed. Check already running.");
-            // 必要ならオーバーレイを再表示
-            const overlay = getOrCreateOverlay();
-            if(overlay && overlay.style.display === 'none' && overlay.innerHTML.trim() !== '') {
-                // overlay.style.display = 'block';
-                // すぐに表示せず、次のupdateCodecInfoで内容が更新されてから表示されるのを待つ
-            }
-             // 動画が切り替わった可能性があるので一度更新をかける
-             updateCodecInfo();
-        }
-    } else {
-        // 動画ページでない、またはプレイヤーが存在しない場合
-        if (checkInterval) { // チェックが実行中なら
-            console.log("[Content] Not on watch page or player not found. Stopping check.");
-            stopChecking(); // 定期チェックを停止
-        } else {
-            // console.log("[Content] Not on watch page or player not found. Check already stopped.");
-        }
-    }
-}
-
-
-// --- 初期化 ---
-// プレイヤーとナビゲーションの監視を開始
-observePlayerAndNavigation();
-
-// ページ離脱時にリソースをクリーンアップ
-window.addEventListener('beforeunload', () => {
-    stopChecking();
-    if(observer) observer.disconnect();
-    // injectスクリプトやオーバーレイ要素を削除する（オプション）
-    const injectedScript = document.getElementById('codec-info-injector-script');
-    if (injectedScript && injectedScript.parentNode) injectedScript.parentNode.removeChild(injectedScript);
-    const overlay = document.getElementById('youtube-codec-info-overlay');
-    if (overlay && overlay.parentNode) overlay.parentNode.removeChild(overlay);
+    return true;
 });
 
-console.log("YouTube Codec Info content script initialized. v2");
+// Listen for storage changes
+chrome.storage.onChanged.addListener((changes, namespace) => {
+  if (namespace === 'sync' && (changes.isVisible || changes.overlaySize)) {
+    loadInitialSettings();
+  }
+});
+
+// Start/Stop periodic checks for info and position
+ function startChecking() {
+     if (checkInterval) return;
+     // console.log("[Content] Starting periodic check..."); // Log commented out
+
+     const checkInjectLoaded = setInterval(() => {
+         const injectorScript = document.getElementById('codec-info-injector-script');
+         if (injectorScript && typeof window.postMessage === 'function') {
+             clearInterval(checkInjectLoaded);
+             // console.log("[Content] Inject script confirmed. Starting updates."); // Log commented out
+             setTimeout(() => {
+                 if(getCurrentVideoId()) {
+                     updateCodecInfo();
+                     setTimeout(adjustOverlayPosition, 100);
+                 }
+             }, 500);
+
+             checkInterval = setInterval(() => {
+                 try {
+                     if(getCurrentVideoId()) {
+                         updateCodecInfo();
+                         adjustOverlayPosition();
+                     }
+                 } catch (error) {
+                     console.error("[Content] Error inside setInterval callback:", error);
+                 }
+             }, 200); // Check every 200ms
+         } else {
+              if (!injectorScript) injectScript('inject.js');
+         }
+     }, 500);
+
+     setTimeout(() => {
+        if (!checkInterval) {
+            clearInterval(checkInjectLoaded);
+            console.error("[Content] Inject script did not load or postMessage not ready within timeout.");
+        }
+     }, 10000);
+ }
+
+ function stopChecking() {
+     if (checkInterval) {
+         // console.log("[Content] Stopping periodic check."); // Log commented out
+         clearInterval(checkInterval);
+         checkInterval = null;
+     }
+ }
+
+// Observe player and navigation changes (SPA support)
+function observePlayerAndNavigation() {
+     if (observer) observer.disconnect();
+
+     const targetNode = document.body;
+     const config = { childList: true, subtree: true };
+     let currentHref = document.location.href;
+     let navigationDebounceTimer = null;
+     let playerCheckDebounceTimer = null;
+
+     observer = new MutationObserver((mutationsList, observer) => {
+         clearTimeout(navigationDebounceTimer);
+         navigationDebounceTimer = setTimeout(() => {
+             if (document.location.href !== currentHref) {
+                 currentHref = document.location.href;
+                 handleNavigation();
+             }
+         }, 100);
+
+         let playerFound = false;
+         let playerRemoved = false;
+         for(const mutation of mutationsList) {
+              if (mutation.type === 'childList') {
+                 mutation.addedNodes.forEach(node => { if (node.nodeType === 1 && (node.id === 'movie_player' || (node.querySelector && node.querySelector('#movie_player')))) playerFound = true; });
+                 mutation.removedNodes.forEach(node => { if (node.nodeType === 1 && node.id === 'movie_player') playerRemoved = true; });
+             }
+             if (playerFound || playerRemoved) break;
+         }
+         if (playerFound || playerRemoved) {
+            clearTimeout(playerCheckDebounceTimer);
+            playerCheckDebounceTimer = setTimeout(() => { handleNavigation(); }, 200);
+         }
+     });
+     // console.log("[Content] Starting MutationObserver for player and navigation."); // Log commented out
+     observer.observe(targetNode, config);
+     handleNavigation(); // Initial check
+ }
+
+// Handle navigation and player state changes
+function handleNavigation() {
+     const isOnWatchPage = getCurrentVideoId();
+     const player = document.getElementById('movie_player');
+
+     if (isOnWatchPage && player) {
+         if (!checkInterval) {
+             // console.log("[Content] Watch page and player detected. Initializing..."); // Log commented out
+             injectScript('inject.js');
+             getOrCreateOverlay();
+             loadInitialSettings();
+             startChecking();
+         } else {
+             // Ensure overlay exists and position is checked on navigation/refresh
+             getOrCreateOverlay();
+             requestAnimationFrame(adjustOverlayPosition);
+             updateCodecInfo(); // Check if video ID changed
+         }
+     } else {
+         if (checkInterval) {
+             stopChecking();
+         }
+         const overlay = document.getElementById('youtube-codec-info-overlay');
+         if (overlay) overlay.style.display = 'none';
+         lastVideoId = null;
+     }
+ }
+
+ // --- Initialization ---
+ loadInitialSettings();
+ if (document.readyState === 'loading') {
+     document.addEventListener('DOMContentLoaded', observePlayerAndNavigation);
+ } else {
+     observePlayerAndNavigation();
+ }
+ window.addEventListener('beforeunload', () => {
+     stopChecking();
+     if(observer) observer.disconnect();
+ });
+
+// console.log("YouTube Codec Info content script initialized. v3.3"); // Can be removed for final release

@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>YouTube Codec Info Settings</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <div class="container">
+    <h2>Settings</h2>
+
+    <div class="setting-item">
+      <label for="toggle-visibility">Show Overlay:</label>
+      <label class="switch">
+        <input type="checkbox" id="toggle-visibility">
+        <span class="slider round"></span>
+      </label>
+    </div>
+
+    <div class="setting-item">
+      <label for="size-slider">Font Size:</label>
+      <input type="range" id="size-slider" min="10" max="20" step="1">
+      <span id="size-value">13px</span>
+    </div>
+
+  </div>
+  <script src="popup.js"></script>
+</body>
+</html>
