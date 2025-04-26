@@ -15,12 +15,14 @@
         <input type="checkbox" id="toggle-visibility">
         <span class="slider round"></span>
       </label>
+      <span class="help-icon" id="help-show-overlay" title="Overlay visibility toggle">?</span> <!-- Added help icon -->
     </div>
 
     <div class="setting-item size-setting">
       <label for="size-slider">Font Size:</label>
       <input type="range" id="size-slider" min="10" max="20" step="1">
       <span id="size-value">13px</span>
+       <span class="help-icon" id="help-font-size" title="Adjust overlay font size">?</span> <!-- Added help icon -->
     </div>
 
     <hr>
@@ -29,26 +31,37 @@
     <div class="setting-item toggle-item">
       <label for="toggle-video-codec">🎬 Video Codec</label>
       <input type="checkbox" id="toggle-video-codec" class="info-toggle">
+      <span class="help-icon" id="help-videoCodec" title="Learn about video codecs">?</span> <!-- Added help icon -->
     </div>
     <div class="setting-item toggle-item">
       <label for="toggle-resolution-fps">🖼️ Resolution & FPS</label>
       <input type="checkbox" id="toggle-resolution-fps" class="info-toggle">
+      <span class="help-icon" id="help-resolutionFps" title="Learn about resolution & FPS">?</span> <!-- Added help icon -->
     </div>
     <div class="setting-item toggle-item">
       <label for="toggle-audio-codec">🔊 Audio Codec</label>
       <input type="checkbox" id="toggle-audio-codec" class="info-toggle">
+       <span class="help-icon" id="help-audioCodec" title="Learn about audio codecs">?</span> <!-- Added help icon -->
     </div>
     <div class="setting-item toggle-item">
       <label for="toggle-audio-details">👂 Audio Details (Rate/Ch)</label>
       <input type="checkbox" id="toggle-audio-details" class="info-toggle">
+       <span class="help-icon" id="help-audioDetails" title="Learn about audio details">?</span> <!-- Added help icon -->
     </div>
     <div class="setting-item toggle-item">
-      <label for="toggle-color-space">🎨 Color Space</label>
+      <label for="toggle-color-space">🎨 Color Space / EOTF</label> <!-- Label updated -->
       <input type="checkbox" id="toggle-color-space" class="info-toggle">
+       <span class="help-icon" id="help-colorSpace" title="Learn about color space & EOTF">?</span> <!-- Added help icon -->
     </div>
     <div class="setting-item toggle-item">
       <label for="toggle-stream-status">🔴 Stream Status (Live/Dash)</label>
       <input type="checkbox" id="toggle-stream-status" class="info-toggle">
+       <span class="help-icon" id="help-streamStatus" title="Learn about stream status">?</span> <!-- Added help icon -->
+    </div>
+
+    <!-- Explanation Area -->
+    <div id="explanation-area" class="explanation-box" style="display: none;">
+      <!-- Content will be injected by JS -->
     </div>
 
   </div>
