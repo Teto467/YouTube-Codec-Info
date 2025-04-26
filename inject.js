@@ -1,17 +1,16 @@
-// inject.js (Release v2)
+// inject.js (Release v2.1 - AV1 Priority)
 
 if (window.codecInfoInjectListenerAttached) {
     // Listener already attached. Skipping setup.
 } else {
     window.codecInfoInjectListenerAttached = true;
-    // console.log("[Inject] Script running. Setting up listener."); // Log commented out
+    // console.log("[Inject] Script running (v2.1). Setting up listener.");
 
     window.addEventListener("message", (event) => {
         if (event.source !== window || !event.data || event.data.type !== "GET_CODEC_INFO") {
             return;
         }
-
-        // console.log("[Inject] Received GET_CODEC_INFO request."); // Log commented out
+        // console.log("[Inject] Received GET_CODEC_INFO request.");
 
         let codecInfo = null;
         const player = document.getElementById('movie_player');
@@ -26,12 +25,12 @@ if (window.codecInfoInjectListenerAttached) {
             let playerResponse = null;
             if (typeof player.getPlayerResponse === 'function') {
                 playerResponse = player.getPlayerResponse();
+                // console.log("[Inject] player.getPlayerResponse() available.");
             } else {
-                // console.log("[Inject] player.getPlayerResponse() not available."); // Log commented out
+                 // console.log("[Inject] player.getPlayerResponse() not available.");
             }
-
             if (!playerResponse && window.ytplayer && window.ytplayer.config && window.ytplayer.config.args && window.ytplayer.config.args.player_response) {
-                // console.log("[Inject] Trying ytplayer.config.args.player_response as fallback."); // Log commented out
+                // console.log("[Inject] Trying ytplayer.config.args.player_response as fallback.");
                 try {
                     playerResponse = typeof window.ytplayer.config.args.player_response === 'string'
                         ? JSON.parse(window.ytplayer.config.args.player_response)
@@ -44,20 +43,18 @@ if (window.codecInfoInjectListenerAttached) {
 
             if (!playerResponse) {
                  console.warn("[Inject] Could not retrieve playerResponse data.");
-                 if (typeof player.getVideoStats === 'function') {
-                     // const stats = player.getVideoStats(); // Debug only
-                     // console.log("[Inject] Debug: player.getVideoStats() result:", stats);
-                 }
                  window.postMessage({ type: "CODEC_INFO_RESULT", payload: null, error: "Could not retrieve playerResponse" }, "*");
                  return;
             }
 
             if (playerResponse && playerResponse.streamingData) {
+                // console.log("[Inject] Parsing playerResponse.streamingData...");
                 const videoDetails = playerResponse.videoDetails;
                 const streamingData = playerResponse.streamingData;
                 const adaptiveFormats = streamingData.adaptiveFormats || [];
                 const formats = streamingData.formats || [];
                 const allFormats = [...adaptiveFormats, ...formats];
+                // console.log(`[Inject] Found ${adaptiveFormats.length} adaptive formats and ${formats.length} regular formats.`);
 
                 if (allFormats.length === 0) {
                      console.warn("[Inject] No formats found in streamingData.");
@@ -65,8 +62,6 @@ if (window.codecInfoInjectListenerAttached) {
                      return;
                 }
 
-                let currentVideoFormat = null;
-                let currentAudioFormat = null;
                 let currentQualityLabel = null;
                 let currentHeight = null;
                 let currentItag = null;
@@ -75,38 +70,81 @@ if (window.codecInfoInjectListenerAttached) {
                     currentQualityLabel = player.getPlaybackQuality();
                 }
                  if (typeof player.getVideoHeight === 'function') {
-                    currentHeight = player.getVideoHeight();
+                     currentHeight = player.getVideoHeight();
                  }
                  if (typeof player.getVideoData === 'function') {
                     const videoData = player.getVideoData();
                     currentItag = videoData?.itag;
+                    if (currentHeight === 0 && videoData?.height) {
+                        currentHeight = videoData.height;
+                    }
                  }
+                // console.log("[Inject] Current playback state:", { currentItag, currentQualityLabel, currentHeight });
+
+
+                let currentVideoFormat = null;
+                let currentAudioFormat = null;
 
                 if (currentItag) {
+                    // console.log(`[Inject] Attempting to find video format by itag: ${currentItag}`);
                     currentVideoFormat = allFormats.find(f => f.itag === currentItag && f.mimeType?.startsWith('video/'));
+                    // if (currentVideoFormat) console.log("[Inject] Found video format by ITAG:", currentVideoFormat);
+                    // else console.log("[Inject] Video format not found by ITAG. Proceeding to estimation.");
+                }
+
+                if (!currentVideoFormat && (currentHeight || currentQualityLabel)) {
+                    // console.log("[Inject] Estimating video format by height/qualityLabel...");
+                    const potentialMatches = adaptiveFormats.filter(f =>
+                        f.mimeType?.startsWith('video/') &&
+                        ((currentHeight && f.height === currentHeight) || (currentQualityLabel && f.qualityLabel === currentQualityLabel))
+                    );
+                    // console.log(`[Inject] Found ${potentialMatches.length} potential matches based on height/quality.`);
+
+                    if (potentialMatches.length > 0) {
+                        currentVideoFormat =
+                            potentialMatches.find(f => f.mimeType?.includes('av01')) ||
+                            potentialMatches.find(f => f.mimeType?.includes('vp09')) ||
+                            potentialMatches.find(f => f.mimeType?.includes('avc1')) ||
+                            potentialMatches[0];
+                         // console.log("[Inject] Estimated video format from potential matches:", currentVideoFormat);
+                    } else {
+                        // console.log("[Inject] No potential matches found by height/quality in adaptive formats.");
+                         const potentialRegularMatches = formats.filter(f =>
+                             f.mimeType?.startsWith('video/') &&
+                             ((currentHeight && f.height === currentHeight) || (currentQualityLabel && f.qualityLabel === currentQualityLabel))
+                         );
+                          if (potentialRegularMatches.length > 0) {
+                              currentVideoFormat =
+                                  potentialRegularMatches.find(f => f.mimeType?.includes('av01')) ||
+                                  potentialRegularMatches.find(f => f.mimeType?.includes('vp09')) ||
+                                  potentialRegularMatches.find(f => f.mimeType?.includes('avc1')) ||
+                                  potentialRegularMatches[0];
+                              // console.log("[Inject] Estimated video format from potential regular matches:", currentVideoFormat);
+                          }
+                    }
                 }
 
                 if (!currentVideoFormat) {
-                    currentVideoFormat = adaptiveFormats.find(f => f.qualityLabel === currentQualityLabel && f.mimeType?.startsWith('video/')) ||
-                                        adaptiveFormats.find(f => f.height === currentHeight && f.mimeType?.startsWith('video/')) ||
-                                        formats.find(f => f.qualityLabel === currentQualityLabel) ||
-                                        formats.find(f => f.height === currentHeight);
-                }
-
-                if (!currentVideoFormat) {
-                    currentVideoFormat = adaptiveFormats.find(f => f.mimeType?.startsWith('video/vp9')) ||
-                                    adaptiveFormats.find(f => f.mimeType?.startsWith('video/av01')) ||
-                                    adaptiveFormats.find(f => f.mimeType?.startsWith('video/avc1')) ||
-                                    adaptiveFormats.find(f => f.mimeType?.startsWith('video/')) ||
-                                    formats.find(f => f.mimeType?.startsWith('video/'));
+                    // console.log("[Inject] Fallback: Finding best available video format...");
+                    currentVideoFormat =
+                        adaptiveFormats.find(f => f.mimeType?.includes('av01')) ||
+                        adaptiveFormats.find(f => f.mimeType?.includes('vp09')) ||
+                        adaptiveFormats.find(f => f.mimeType?.includes('avc1')) ||
+                        formats.find(f => f.mimeType?.includes('av01')) ||
+                        formats.find(f => f.mimeType?.includes('vp09')) ||
+                        formats.find(f => f.mimeType?.includes('avc1')) ||
+                        adaptiveFormats.find(f => f.mimeType?.startsWith('video/')) ||
+                        formats.find(f => f.mimeType?.startsWith('video/'));
+                    // if (currentVideoFormat) console.log("[Inject] Found video format via fallback:", currentVideoFormat);
                 }
 
                 currentAudioFormat = adaptiveFormats.find(f => f.mimeType?.startsWith('audio/opus')) ||
                                     adaptiveFormats.find(f => f.mimeType?.startsWith('audio/mp4a')) ||
-                                    adaptiveFormats.find(f => f.mimeType?.startsWith('audio/'));
+                                    adaptiveFormats.find(f => f.mimeType?.startsWith('audio/')) ||
+                                    formats.find(f => f.mimeType?.startsWith('audio/'));
 
                 if (!currentVideoFormat && !currentAudioFormat) {
-                     console.warn("[Inject] Could not determine current video or audio format.");
+                     console.warn("[Inject] Could not determine any current video or audio format.");
                      window.postMessage({ type: "CODEC_INFO_RESULT", payload: null, error: "Could not determine format" }, "*");
                      return;
                 }
@@ -132,9 +170,10 @@ if (window.codecInfoInjectListenerAttached) {
                     isDash: streamingData.dashManifestUrl !== undefined,
                     isMsl: streamingData.hlsManifestUrl !== undefined,
                 };
+                 // console.log("[Inject] Final determined codecInfo:", codecInfo);
 
             } else {
-                // console.log("[Inject] streamingData not found in playerResponse."); // Log commented out
+                console.warn("[Inject] streamingData not found in playerResponse.");
                  window.postMessage({ type: "CODEC_INFO_RESULT", payload: null, error: "streamingData not found" }, "*");
                  return;
             }
@@ -146,9 +185,7 @@ if (window.codecInfoInjectListenerAttached) {
              return;
         }
 
-        // console.log("[Inject] Sending CODEC_INFO_RESULT with payload:", codecInfo); // Log commented out
         window.postMessage({ type: "CODEC_INFO_RESULT", payload: codecInfo }, "*");
 
     }, false);
-
 }

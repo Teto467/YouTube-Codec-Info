@@ -1,11 +1,22 @@
-// content.js (Release v3.3 - Robust Dynamic Position)
-console.log("YouTube Codec Info extension loaded. v3.3"); // Initial load message
+// content.js (Release v3.5 - Realtime Settings Apply)
+// console.log("YouTube Codec Info extension loaded. v3.5"); // Initial load message
 
 let infoDisplay = null;
 let lastVideoId = null;
 let checkInterval = null;
 let observer = null;
-let currentSettings = { isVisible: true, overlaySize: 13 };
+// Default settings including display toggles
+let currentSettings = {
+    isVisible: true,
+    overlaySize: 13,
+    showVideoCodec: true,
+    showResolutionFps: true,
+    showAudioCodec: true,
+    showAudioDetails: true,
+    showColorSpace: true,
+    showStreamStatus: true,
+};
+let lastReceivedData = null; // Variable to store the latest codec data
 
 // Inject script into page context
 function injectScript(filePath) {
@@ -14,7 +25,7 @@ function injectScript(filePath) {
   const script = document.createElement('script');
   script.id = 'codec-info-injector-script';
   script.src = chrome.runtime.getURL(filePath);
-  script.onload = function() { /* console.log(`[Content] ${filePath} injected and loaded.`); */ }; // Log commented out
+  script.onload = function() { /* console.log(`[Content] ${filePath} injected and loaded.`); */ };
   script.onerror = function() { console.error(`[Content] Failed to load ${filePath}`); };
   (document.head || document.documentElement).appendChild(script);
 }
@@ -26,22 +37,32 @@ function getOrCreateOverlay() {
       infoDisplay = existingOverlay;
       const playerContainer = document.querySelector('#movie_player');
       if (playerContainer && !playerContainer.contains(infoDisplay)) {
-          // console.log("[Content] Moving overlay to current player container."); // Log commented out
+          // console.log("[Content] Moving overlay to current player container.");
           playerContainer.appendChild(infoDisplay);
       }
-      applySettings(currentSettings); // Ensure settings are applied
+      // Ensure styles reflect current settings when getting existing overlay
+      if (infoDisplay) {
+           infoDisplay.style.fontSize = `${currentSettings.overlaySize}px`;
+           const hasContent = infoDisplay.innerHTML.trim() !== '';
+           infoDisplay.style.display = currentSettings.isVisible && hasContent ? 'block' : 'none';
+           if (infoDisplay.style.display === 'block') {
+                requestAnimationFrame(adjustOverlayPosition);
+           }
+      }
       return infoDisplay;
   }
+
+  // Create new overlay if it doesn't exist
   const playerContainer = document.querySelector('#movie_player');
   if (!playerContainer) return null;
 
   infoDisplay = document.createElement('div');
   infoDisplay.id = 'youtube-codec-info-overlay';
-  infoDisplay.style.display = currentSettings.isVisible ? 'block' : 'none';
+  infoDisplay.style.display = currentSettings.isVisible ? 'block' : 'none'; // Initial display based on visibility
   infoDisplay.style.fontSize = `${currentSettings.overlaySize}px`;
-  infoDisplay.innerHTML = '';
+  infoDisplay.innerHTML = ''; // Start empty
   playerContainer.appendChild(infoDisplay);
-  // console.log("[Content] Codec info overlay created."); // Log commented out
+  // console.log("[Content] Codec info overlay created.");
   return infoDisplay;
 }
 
@@ -96,8 +117,8 @@ function adjustOverlayPosition() {
 // Request codec info from inject script
 function updateCodecInfo() {
   const player = document.getElementById('movie_player');
-  const overlay = getOrCreateOverlay();
-  if (!player || !overlay) return;
+  const overlay = getOrCreateOverlay(); // Ensure overlay exists or is created
+  if (!player || !overlay) return; // Don't proceed if player or overlay isn't ready
 
   try {
       window.postMessage({ type: "GET_CODEC_INFO" }, "*");
@@ -106,12 +127,14 @@ function updateCodecInfo() {
       injectScript('inject.js');
   }
 
+  // Video change check (only relevant for resetting content)
   const currentVideoId = getCurrentVideoId();
   if (currentVideoId && currentVideoId !== lastVideoId) {
-    // console.log(`[Content] Video changed: ${lastVideoId} -> ${currentVideoId}`); // Log commented out
+    // console.log(`[Content] Video changed: ${lastVideoId} -> ${currentVideoId}`);
      lastVideoId = currentVideoId;
+     lastReceivedData = null; // Reset stored data on video change
      if (overlay) {
-        overlay.innerHTML = '';
+        overlay.innerHTML = ''; // Clear content immediately
         overlay.style.display = 'none';
      }
   }
@@ -126,16 +149,12 @@ function getCurrentVideoId() {
   return null;
 }
 
-// Listen for results from inject script
-window.addEventListener("message", (event) => {
-  if (event.source !== window || !event.data || event.data.type !== "CODEC_INFO_RESULT") return;
+// Function to build overlay HTML from data and settings
+function buildInfoHtml(data) {
+    if (!data) return ''; // Return empty string if no data
 
-  const data = event.data.payload;
-  const overlay = getOrCreateOverlay();
-  if (!overlay) return;
-
-  if (data) {
     try {
+        // --- Extract data ---
         const videoQuality = data.qualityLabel || data.resolution || (data.height ? `${data.height}p` : '');
         const videoFps = data.fps ? `@${data.fps}` : '';
         const videoCodec = data.videoCodec?.split('.')[0] || 'N/A';
@@ -146,61 +165,131 @@ window.addEventListener("message", (event) => {
         const colorInfo = [colorPrimaries, colorTransfer, colorMatrix].filter(Boolean).map(s => s.toUpperCase()).join(' / ');
         const audioSampleRate = data.audioSampleRate ? `${Math.round(parseInt(data.audioSampleRate) / 1000)}kHz` : '';
         const audioChannels = data.audioChannels ? `${data.audioChannels}ch` : '';
-        let infoParts = [];
-        if (videoCodec !== 'N/A') { let videoStr = `🎬 ${videoCodec}`; if (videoQuality) videoStr += ` (${videoQuality}${videoFps})`; infoParts.push(videoStr); }
-        if (audioCodec !== 'N/A') { let audioStr = `🔊 ${audioCodec}`; let audioDetails = [audioSampleRate, audioChannels].filter(Boolean).join(', '); if (audioDetails) audioStr += ` (${audioDetails})`; infoParts.push(audioStr); }
-        if (colorInfo) infoParts.push(`🎨 ${colorInfo}`);
-        let statusFlags = [];
-        if(data.isLive) statusFlags.push(`🔴 LIVE`);
-        if(data.isDash) statusFlags.push(`DASH`);
-        else if (data.isMsl) statusFlags.push(`HLS`);
-        let infoText = infoParts.join(' | ');
-        if (statusFlags.length > 0) { infoText += `<br>${statusFlags.join(' ')}`; }
+        const isLive = data.isLive || false;
+        const isDash = data.isDash || false;
+        const isMsl = data.isMsl || false;
 
-        if (infoText.trim() === '' || (videoCodec === 'N/A' && audioCodec === 'N/A')) {
-             overlay.innerHTML = '';
-             if (currentSettings.isVisible) overlay.style.display = 'none';
-        } else {
-             overlay.innerHTML = infoText;
-             overlay.style.display = currentSettings.isVisible ? 'block' : 'none';
-             if (currentSettings.isVisible) {
-                 requestAnimationFrame(adjustOverlayPosition);
-             }
+        // --- Build display string based on currentSettings ---
+        let infoParts = [];
+        let statusParts = [];
+
+        // Video Codec
+        if (currentSettings.showVideoCodec && videoCodec !== 'N/A') {
+            infoParts.push(`🎬 ${videoCodec}`);
         }
+        // Resolution & FPS
+        if (currentSettings.showResolutionFps && videoQuality) {
+            const resFpsString = `${videoQuality}${videoFps}`;
+            if (currentSettings.showVideoCodec && infoParts.length > 0 && videoCodec !== 'N/A') {
+               infoParts[infoParts.length - 1] += ` (${resFpsString})`;
+            } else {
+                infoParts.push(`🖼️ ${resFpsString}`);
+            }
+        }
+        // Audio Codec
+        if (currentSettings.showAudioCodec && audioCodec !== 'N/A') {
+             infoParts.push(`🔊 ${audioCodec}`);
+        }
+        // Audio Details
+        if (currentSettings.showAudioDetails && (audioSampleRate || audioChannels)) {
+            const audioDetails = [audioSampleRate, audioChannels].filter(Boolean).join(', ');
+            if (audioDetails) {
+                 if (currentSettings.showAudioCodec && infoParts.length > 0 && infoParts[infoParts.length-1].startsWith('🔊')) {
+                    infoParts[infoParts.length - 1] += ` (${audioDetails})`;
+                 } else {
+                     infoParts.push(`👂 ${audioDetails}`);
+                 }
+            }
+        }
+        // Color Space
+        if (currentSettings.showColorSpace && colorInfo) {
+            infoParts.push(`🎨 ${colorInfo}`);
+        }
+        // Stream Status
+        if (currentSettings.showStreamStatus) {
+            if (isLive) statusParts.push(`🔴 LIVE`);
+            if (isDash) statusParts.push(`DASH`);
+            else if (isMsl) statusParts.push(`HLS`);
+        }
+
+        // Combine parts
+        let infoText = infoParts.join(' | ');
+        if (statusParts.length > 0) {
+            infoText += (infoText ? '<br>' : '') + statusParts.join(' ');
+        }
+
+        return infoText.trim(); // Return the generated HTML string
+
     } catch (e) {
-        console.error("[Content] Error parsing codec info:", e, data);
-        if (overlay) {
-           overlay.innerHTML = "Codec Info Error";
-           overlay.style.display = currentSettings.isVisible ? 'block' : 'none';
-            if (currentSettings.isVisible) {
-                 requestAnimationFrame(adjustOverlayPosition);
-             }
-        }
+        console.error("[Content] Error building info HTML:", e, data);
+        return "Codec Info Error"; // Return error string on failure
     }
+}
+
+
+// Listen for results from inject script
+window.addEventListener("message", (event) => {
+  if (event.source !== window || !event.data || event.data.type !== "CODEC_INFO_RESULT") return;
+
+  lastReceivedData = event.data.payload; // Store the received data
+  const overlay = getOrCreateOverlay();
+  if (!overlay) return;
+
+  if (lastReceivedData) {
+      const infoText = buildInfoHtml(lastReceivedData); // Use the build function
+
+      // Update overlay display
+      overlay.innerHTML = infoText; // Update content first
+      const hasContent = infoText !== '';
+      const shouldBeVisible = currentSettings.isVisible && hasContent;
+      overlay.style.display = shouldBeVisible ? 'block' : 'none'; // Then update visibility
+
+      if (shouldBeVisible) {
+            requestAnimationFrame(adjustOverlayPosition); // Adjust position if visible
+      }
+
   } else {
-     if (overlay) overlay.style.display = 'none';
+     // Handle case where payload is null (e.g., error from inject script)
+     overlay.innerHTML = event.data.error ? `Error: ${event.data.error}` : '';
+     overlay.style.display = 'none';
+     lastReceivedData = null; // Reset stored data on error/null
   }
 }, false);
 
-// Apply settings from storage or popup
+
+// Apply settings from storage or popup (triggers immediate content refresh)
 function applySettings(settings) {
-  currentSettings = settings;
-  const overlay = document.getElementById('youtube-codec-info-overlay');
+  // Merge with defaults to ensure all keys exist
+  currentSettings = { ...currentSettings, ...settings };
+  // console.log("[Content] Applying settings:", currentSettings);
+  const overlay = getOrCreateOverlay(); // Ensure overlay exists
   if (overlay) {
-      const hasContent = overlay.innerHTML.trim() !== '';
-      const shouldBeVisible = settings.isVisible && hasContent;
+      overlay.style.fontSize = `${currentSettings.overlaySize}px`;
+
+      // Regenerate HTML content using stored data and new settings
+      const newHtml = buildInfoHtml(lastReceivedData);
+      overlay.innerHTML = newHtml;
+
+      // Update visibility based on settings and whether there's content
+      const hasContent = newHtml !== '';
+      const shouldBeVisible = currentSettings.isVisible && hasContent;
       overlay.style.display = shouldBeVisible ? 'block' : 'none';
-      overlay.style.fontSize = `${settings.overlaySize}px`;
+
       if (shouldBeVisible) {
-          requestAnimationFrame(adjustOverlayPosition);
+          requestAnimationFrame(adjustOverlayPosition); // Adjust position if visible
       }
   }
 }
 
 // Load initial settings from storage
 function loadInitialSettings() {
-  chrome.storage.sync.get({ isVisible: true, overlaySize: 13 }, (items) => {
+  chrome.storage.sync.get(currentSettings, (items) => {
     applySettings(items);
+    // Request fresh data on initial load as lastReceivedData will be null
+    if (getCurrentVideoId()) {
+        // Delay slightly more on initial load to ensure player is ready
+        setTimeout(updateCodecInfo, 600);
+    }
   });
 }
 
@@ -210,43 +299,50 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         applySettings(request.payload);
         sendResponse({ status: "Settings applied" });
     }
-    return true;
+    return true; // Indicate async response
 });
 
 // Listen for storage changes
 chrome.storage.onChanged.addListener((changes, namespace) => {
-  if (namespace === 'sync' && (changes.isVisible || changes.overlaySize)) {
-    loadInitialSettings();
+  if (namespace === 'sync') { // Check if any relevant setting changed
+      const changedKeys = Object.keys(changes);
+      if (changedKeys.some(key => key in currentSettings)) {
+            // console.log("[Content] Storage changed, reloading settings.");
+            // Reload settings on external change, applySettings will handle refresh
+            loadInitialSettings();
+      }
   }
 });
 
 // Start/Stop periodic checks for info and position
  function startChecking() {
      if (checkInterval) return;
-     // console.log("[Content] Starting periodic check..."); // Log commented out
+     // console.log("[Content] Starting periodic check...");
 
      const checkInjectLoaded = setInterval(() => {
          const injectorScript = document.getElementById('codec-info-injector-script');
          if (injectorScript && typeof window.postMessage === 'function') {
              clearInterval(checkInjectLoaded);
-             // console.log("[Content] Inject script confirmed. Starting updates."); // Log commented out
-             setTimeout(() => {
+             // console.log("[Content] Inject script confirmed. Starting updates.");
+             // Initial update request already handled in loadInitialSettings/handleNavigation
+             /*setTimeout(() => {
                  if(getCurrentVideoId()) {
                      updateCodecInfo();
                      setTimeout(adjustOverlayPosition, 100);
                  }
-             }, 500);
+             }, 500);*/
 
              checkInterval = setInterval(() => {
                  try {
                      if(getCurrentVideoId()) {
+                         // Only request new data periodically, position adjusts automatically
                          updateCodecInfo();
-                         adjustOverlayPosition();
+                         // adjustOverlayPosition is called after data processing or setting change
                      }
                  } catch (error) {
                      console.error("[Content] Error inside setInterval callback:", error);
                  }
-             }, 200); // Check every 200ms
+             }, 2000); // ★★★ Reduce frequency slightly (e.g., 2 seconds) as position updates are faster ★★★
          } else {
               if (!injectorScript) injectScript('inject.js');
          }
@@ -262,7 +358,7 @@ chrome.storage.onChanged.addListener((changes, namespace) => {
 
  function stopChecking() {
      if (checkInterval) {
-         // console.log("[Content] Stopping periodic check."); // Log commented out
+         // console.log("[Content] Stopping periodic check.");
          clearInterval(checkInterval);
          checkInterval = null;
      }
@@ -301,9 +397,9 @@ function observePlayerAndNavigation() {
             playerCheckDebounceTimer = setTimeout(() => { handleNavigation(); }, 200);
          }
      });
-     // console.log("[Content] Starting MutationObserver for player and navigation."); // Log commented out
+     // console.log("[Content] Starting MutationObserver for player and navigation.");
      observer.observe(targetNode, config);
-     handleNavigation(); // Initial check
+     // Initial check might happen before player is fully ready, handleNavigation covers it
  }
 
 // Handle navigation and player state changes
@@ -313,29 +409,33 @@ function handleNavigation() {
 
      if (isOnWatchPage && player) {
          if (!checkInterval) {
-             // console.log("[Content] Watch page and player detected. Initializing..."); // Log commented out
+             // console.log("[Content] Watch page and player detected. Initializing...");
              injectScript('inject.js');
-             getOrCreateOverlay();
-             loadInitialSettings();
-             startChecking();
+             getOrCreateOverlay(); // Ensure overlay exists
+             loadInitialSettings(); // Load settings and trigger initial update
+             startChecking(); // Start periodic checks
          } else {
-             // Ensure overlay exists and position is checked on navigation/refresh
-             getOrCreateOverlay();
-             requestAnimationFrame(adjustOverlayPosition);
-             updateCodecInfo(); // Check if video ID changed
+             // Check is already running, maybe page refreshed or navigated within watch page
+             getOrCreateOverlay(); // Ensure overlay still exists
+             requestAnimationFrame(adjustOverlayPosition); // Ensure position is correct
+             // Check if video ID changed, updateCodecInfo handles this
+             updateCodecInfo();
          }
      } else {
+         // Not on watch page or player removed
          if (checkInterval) {
              stopChecking();
          }
          const overlay = document.getElementById('youtube-codec-info-overlay');
-         if (overlay) overlay.style.display = 'none';
-         lastVideoId = null;
+         if (overlay) overlay.style.display = 'none'; // Hide overlay
+         lastVideoId = null; // Reset video ID
+         lastReceivedData = null; // Reset data
      }
  }
 
  // --- Initialization ---
- loadInitialSettings();
+ loadInitialSettings(); // Load settings first
+ // Start observing after DOM is ready
  if (document.readyState === 'loading') {
      document.addEventListener('DOMContentLoaded', observePlayerAndNavigation);
  } else {
@@ -346,4 +446,4 @@ function handleNavigation() {
      if(observer) observer.disconnect();
  });
 
-// console.log("YouTube Codec Info content script initialized. v3.3"); // Can be removed for final release
+// console.log("YouTube Codec Info content script initialized. v3.5");

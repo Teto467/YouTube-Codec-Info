@@ -17,10 +17,38 @@
       </label>
     </div>
 
-    <div class="setting-item">
+    <div class="setting-item size-setting">
       <label for="size-slider">Font Size:</label>
       <input type="range" id="size-slider" min="10" max="20" step="1">
       <span id="size-value">13px</span>
+    </div>
+
+    <hr>
+    <h3>Displayed Info:</h3>
+
+    <div class="setting-item toggle-item">
+      <label for="toggle-video-codec">🎬 Video Codec</label>
+      <input type="checkbox" id="toggle-video-codec" class="info-toggle">
+    </div>
+    <div class="setting-item toggle-item">
+      <label for="toggle-resolution-fps">🖼️ Resolution & FPS</label>
+      <input type="checkbox" id="toggle-resolution-fps" class="info-toggle">
+    </div>
+    <div class="setting-item toggle-item">
+      <label for="toggle-audio-codec">🔊 Audio Codec</label>
+      <input type="checkbox" id="toggle-audio-codec" class="info-toggle">
+    </div>
+    <div class="setting-item toggle-item">
+      <label for="toggle-audio-details">👂 Audio Details (Rate/Ch)</label>
+      <input type="checkbox" id="toggle-audio-details" class="info-toggle">
+    </div>
+    <div class="setting-item toggle-item">
+      <label for="toggle-color-space">🎨 Color Space</label>
+      <input type="checkbox" id="toggle-color-space" class="info-toggle">
+    </div>
+    <div class="setting-item toggle-item">
+      <label for="toggle-stream-status">🔴 Stream Status (Live/Dash)</label>
+      <input type="checkbox" id="toggle-stream-status" class="info-toggle">
     </div>
 
   </div>

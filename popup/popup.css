@@ -1,96 +1,185 @@
 body {
-    font-family: sans-serif;
-    width: 220px;
-    padding: 10px;
-    background-color: #f5f5f5;
+  font-family: sans-serif;
+  width: 280px; /* ポップアップの幅を広げる */
+  padding: 10px 15px; /* パディング調整 */
+  /* background-color は prefers-color-scheme で設定 */
+}
+/* Light mode default will be here */
+
+.container {
+  display: flex;
+  flex-direction: column;
+  gap: 15px; /* 各設定間のスペース */
+}
+
+h2 {
+  margin: 0 0 10px 0;
+  font-size: 16px;
+  text-align: center;
+  border-bottom: 1px solid #ddd; /* 区切り線 */
+  padding-bottom: 8px;
+  /* color は prefers-color-scheme で設定 */
+}
+
+.setting-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px; /* ラベルと要素の間のスペース */
+}
+
+.size-setting label {
+  flex-shrink: 0; /* Font Size ラベルが縮まないように */
+}
+
+label {
+  font-size: 14px;
+  /* color: #555; */ /* Set via prefers-color-scheme */
+}
+
+/* Specific style for toggle items */
+.toggle-item label {
+  flex-grow: 1; /* ラベルがスペースを埋めるように */
+}
+
+/* Simple Toggle Switch CSS */
+.switch {
+  position: relative;
+  display: inline-block;
+  width: 40px; /* スイッチの幅 */
+  height: 20px; /* スイッチの高さ */
+  flex-shrink: 0; /* Prevent switch from shrinking */
+}
+
+.switch input {
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+
+.slider {
+  position: absolute;
+  cursor: pointer;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  /* background-color: #ccc; */ /* Set via prefers-color-scheme */
+  transition: .4s;
+}
+
+.slider:before {
+  position: absolute;
+  content: "";
+  height: 16px; /* スライダー内の円の高さ */
+  width: 16px; /* スライダー内の円の幅 */
+  left: 2px; /* 初期位置 */
+  bottom: 2px; /* 初期位置 */
+  background-color: white;
+  transition: .4s;
+}
+
+input:checked + .slider {
+  /* background-color: #2196F3; */ /* Set via prefers-color-scheme */
+}
+
+input:checked + .slider:before {
+  transform: translateX(calc(40px - (2px * 2) - 16px)); /* 20px */
+}
+
+/* Rounded sliders */
+.slider.round {
+  border-radius: 20px; /* 高さに合わせる */
+}
+
+.slider.round:before {
+  border-radius: 50%;
+}
+
+/* Slider CSS */
+#size-slider {
+  width: 100px; /* スライダーの幅 */
+  cursor: pointer;
+  margin: 0 5px; /* 左右に少しマージン */
+}
+
+#size-value {
+  font-size: 13px;
+  min-width: 35px; /* 値表示エリアの最小幅 (例: 20px) */
+  text-align: right;
+  /* color: #333; */ /* Set via prefers-color-scheme */
+}
+
+hr {
+  border: none;
+  /* border-top: 1px solid #ddd; */ /* Set via prefers-color-scheme */
+  margin: 15px 0;
+}
+
+h3 {
+  font-size: 14px;
+  margin: 0 0 5px 0;
+  /* color: #444; */ /* Set via prefers-color-scheme */
+}
+
+/* Use simple checkboxes for info toggles */
+.info-toggle {
+  cursor: pointer;
+  width: 18px;
+  height: 18px;
+  /* accent-color: #2196F3; */ /* Set via prefers-color-scheme */
+  flex-shrink: 0; /* Prevent checkbox from shrinking */
+}
+
+/* -- Light Mode Defaults -- */
+body { background-color: #f5f5f5; color: #333; }
+h2 { border-bottom-color: #ddd; color: #333; }
+label { color: #555; }
+hr { border-top: 1px solid #ddd; }
+h3 { color: #444; }
+#size-value { color: #333; }
+.slider { background-color: #ccc; }
+input:checked + .slider { background-color: #2196F3; }
+.info-toggle { accent-color: #2196F3; }
+
+
+/* --- Dark Mode Styles --- */
+@media (prefers-color-scheme: dark) {
+  body {
+    background-color: #282828; /* Dark background */
+    color: #eee; /* Light text */
   }
-  
-  .container {
-    display: flex;
-    flex-direction: column;
-    gap: 15px;
-  }
-  
   h2 {
-    margin: 0 0 10px 0;
-    font-size: 16px;
-    text-align: center;
-    color: #333;
+    border-bottom-color: #444;
+    color: #eee;
   }
-  
-  .setting-item {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-  }
-  
   label {
-    font-size: 14px;
-    color: #555;
+    color: #ccc; /* Lighter gray label */
   }
-  
-  /* Toggle Switch CSS */
-  .switch {
-    position: relative;
-    display: inline-block;
-    width: 40px;
-    height: 20px;
+  hr {
+    border-top: 1px solid #444;
   }
-  
-  .switch input {
-    opacity: 0;
-    width: 0;
-    height: 0;
+  h3 {
+    color: #bbb;
   }
-  
-  .slider {
-    position: absolute;
-    cursor: pointer;
-    top: 0;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    background-color: #ccc;
-    transition: .4s;
-  }
-  
-  .slider:before {
-    position: absolute;
-    content: "";
-    height: 16px;
-    width: 16px;
-    left: 2px;
-    bottom: 2px;
-    background-color: white;
-    transition: .4s;
-  }
-  
-  input:checked + .slider {
-    background-color: #2196F3;
-  }
-  
-  input:checked + .slider:before {
-    transform: translateX(calc(40px - (2px * 2) - 16px)); /* 20px */
-  }
-  
-  .slider.round {
-    border-radius: 20px;
-  }
-  
-  .slider.round:before {
-    border-radius: 50%;
-  }
-  
-  /* Slider CSS */
-  #size-slider {
-    width: 100px;
-    cursor: pointer;
-    margin: 0 5px;
-  }
-  
   #size-value {
-    font-size: 13px;
-    min-width: 35px;
-    text-align: right;
-    color: #333;
+    color: #eee;
   }
+  /* Toggle Switch Dark Mode */
+  .slider {
+    background-color: #555; /* Darker base for slider */
+  }
+  input:checked + .slider {
+    background-color: #4d90fe; /* Google Blue for checked */
+  }
+  /* Checkbox Dark Mode */
+  .info-toggle {
+     accent-color: #4d90fe;
+     /* Optional: Add slight filter for better visibility */
+     /* filter: invert(1) hue-rotate(180deg); */
+  }
+  /* Adjust simple checkbox border if needed */
+  /* input[type="checkbox"] {
+    border-color: #777;
+  } */
+}
