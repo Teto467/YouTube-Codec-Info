@@ -29,36 +29,45 @@ function injectScript(filePath) {
   script.onerror = function() { console.error(`[Content] Failed to load ${filePath}`); };
   (document.head || document.documentElement).appendChild(script);
 }
+
+// Get or create the overlay element
 function getOrCreateOverlay() {
-  const existingOverlay = document.getElementById('youtube-codec-info-overlay');
-  if (existingOverlay) {
-      infoDisplay = existingOverlay;
-      const playerContainer = document.querySelector('#movie_player');
-      if (playerContainer && !playerContainer.contains(infoDisplay)) {
-          // console.log("[Content] Moving overlay to current player container.");
-          playerContainer.appendChild(infoDisplay);
-      }
-      // Ensure styles reflect current settings when getting existing overlay
-      if (infoDisplay) {
-           infoDisplay.style.fontSize = `${currentSettings.overlaySize}px`;
-           const hasContent = infoDisplay.innerHTML.trim() !== '';
-           infoDisplay.style.display = currentSettings.isVisible && hasContent ? 'block' : 'none';
-           if (infoDisplay.style.display === 'block') {
-                requestAnimationFrame(adjustOverlayPosition);
-           }
-      }
-      return infoDisplay;
+    const existingOverlay = document.getElementById('youtube-codec-info-overlay');
+    if (existingOverlay) {
+        infoDisplay = existingOverlay;
+        const playerContainer = document.querySelector('#movie_player');
+        if (playerContainer && !playerContainer.contains(infoDisplay)) {
+            playerContainer.appendChild(infoDisplay);
+        }
+        // ★★★ Apply styles directly when retrieving existing overlay ★★★
+        if (infoDisplay) {
+             infoDisplay.style.fontSize = `${currentSettings.overlaySize}px`; // Apply font size
+             const hasContent = infoDisplay.innerHTML.trim() !== '';
+             infoDisplay.style.display = currentSettings.isVisible && hasContent ? 'block' : 'none'; // Apply visibility
+             if (infoDisplay.style.display === 'block') {
+                  requestAnimationFrame(adjustOverlayPosition);
+             }
+        }
+        // applySettings(currentSettings); // ★★★ Removed redundant call ★★★
+        return infoDisplay;
+    }
+  
+    // Create new overlay if it doesn't exist
+    const playerContainer = document.querySelector('#movie_player');
+    if (!playerContainer) return null;
+  
+    infoDisplay = document.createElement('div');
+    infoDisplay.id = 'youtube-codec-info-overlay';
+     // ★★★ Apply current settings on creation ★★★
+    infoDisplay.style.fontSize = `${currentSettings.overlaySize}px`;
+    infoDisplay.innerHTML = ''; // Start empty
+     // Initial display state depends on settings, but content is empty, so start hidden
+    infoDisplay.style.display = 'none';
+    // Visibility will be set correctly when content is added or settings change
+  
+    playerContainer.appendChild(infoDisplay);
+    return infoDisplay;
   }
-  const playerContainer = document.querySelector('#movie_player');
-  if (!playerContainer) return null;
-  infoDisplay = document.createElement('div');
-  infoDisplay.id = 'youtube-codec-info-overlay';
-  infoDisplay.style.display = currentSettings.isVisible ? 'block' : 'none';
-  infoDisplay.style.fontSize = `${currentSettings.overlaySize}px`;
-  infoDisplay.innerHTML = '';
-  playerContainer.appendChild(infoDisplay);
-  return infoDisplay;
-}
 
 
 // --- adjustOverlayPosition (変更なし) ---
@@ -251,20 +260,41 @@ chrome.storage.onChanged.addListener((changes, namespace) => {
   if (namespace === 'sync') { const changedKeys = Object.keys(changes); if (changedKeys.some(key => key in currentSettings)) { loadInitialSettings(); } }
 });
 
-// --- Start/Stop/Observe/Handle ---
- function startChecking() {
-     if (checkInterval) return;
-     const checkInjectLoaded = setInterval(() => {
-         const injectorScript = document.getElementById('codec-info-injector-script');
-         if (injectorScript && typeof window.postMessage === 'function') {
-             clearInterval(checkInjectLoaded);
-             checkInterval = setInterval(() => {
-                 try { if(getCurrentVideoId()) { updateCodecInfo(); } } catch (error) { console.error("[Content] Error inside setInterval callback:", error); }
-             }, 2000);
-         } else { if (!injectorScript) injectScript('inject.js'); }
-     }, 500);
-     setTimeout(() => { if (!checkInterval) { clearInterval(checkInjectLoaded); console.error("[Content] Inject script did not load or postMessage not ready within timeout."); } }, 10000);
- }
+function startChecking() {
+    if (checkInterval) return;
+    // console.log("[Content] Starting periodic check...");
+
+    const checkInjectLoaded = setInterval(() => {
+        const injectorScript = document.getElementById('codec-info-injector-script');
+        if (injectorScript && typeof window.postMessage === 'function') {
+            clearInterval(checkInjectLoaded);
+            // console.log("[Content] Inject script confirmed. Starting updates.");
+            // Initial update request handled elsewhere
+
+            checkInterval = setInterval(() => {
+                try {
+                    if(getCurrentVideoId()) {
+                        // Data update frequency can be less frequent than position check if needed
+                        updateCodecInfo(); // Still update data (maybe less often later?)
+                        adjustOverlayPosition(); // Position check runs more often
+                    }
+                } catch (error) {
+                    console.error("[Content] Error inside setInterval callback:", error);
+                }
+                // ★★★ Change interval from 200 to 100 ★★★
+            }, 100); // Check every 100ms (0.1 seconds)
+        } else {
+             if (!injectorScript) injectScript('inject.js');
+        }
+    }, 500);
+
+    setTimeout(() => {
+       if (!checkInterval) {
+           clearInterval(checkInjectLoaded);
+           console.error("[Content] Inject script did not load or postMessage not ready within timeout.");
+       }
+    }, 10000);
+}
  function stopChecking() { if (checkInterval) { clearInterval(checkInterval); checkInterval = null; } }
  function observePlayerAndNavigation() {
      if (observer) observer.disconnect();
