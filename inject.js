@@ -1,16 +1,17 @@
-// inject.js (Release v2.1 - AV1 Priority)
+// inject.js (修正版 v2.2 - Improved Audio Estimation & Debug)
 
 if (window.codecInfoInjectListenerAttached) {
     // Listener already attached. Skipping setup.
 } else {
     window.codecInfoInjectListenerAttached = true;
-    // console.log("[Inject] Script running (v2.1). Setting up listener.");
+    console.log("[Inject] Script running (v2.2). Setting up listener."); // Version updated
 
     window.addEventListener("message", (event) => {
         if (event.source !== window || !event.data || event.data.type !== "GET_CODEC_INFO") {
             return;
         }
-        // console.log("[Inject] Received GET_CODEC_INFO request.");
+
+        console.log("[Inject] Received GET_CODEC_INFO request."); // Debug log re-enabled
 
         let codecInfo = null;
         const player = document.getElementById('movie_player');
@@ -22,6 +23,7 @@ if (window.codecInfoInjectListenerAttached) {
                 return;
             }
 
+            // --- Player Response Acquisition (Same as v2.1) ---
             let playerResponse = null;
             if (typeof player.getPlayerResponse === 'function') {
                 playerResponse = player.getPlayerResponse();
@@ -40,6 +42,7 @@ if (window.codecInfoInjectListenerAttached) {
                     playerResponse = null;
                 }
             }
+            // --- End Player Response Acquisition ---
 
             if (!playerResponse) {
                  console.warn("[Inject] Could not retrieve playerResponse data.");
@@ -47,6 +50,7 @@ if (window.codecInfoInjectListenerAttached) {
                  return;
             }
 
+            // --- Format Parsing and Estimation ---
             if (playerResponse && playerResponse.streamingData) {
                 // console.log("[Inject] Parsing playerResponse.streamingData...");
                 const videoDetails = playerResponse.videoDetails;
@@ -62,86 +66,86 @@ if (window.codecInfoInjectListenerAttached) {
                      return;
                 }
 
+                // --- Get Current Playback State (Same as v2.1) ---
                 let currentQualityLabel = null;
                 let currentHeight = null;
                 let currentItag = null;
-
-                if (typeof player.getPlaybackQuality === 'function') {
-                    currentQualityLabel = player.getPlaybackQuality();
-                }
-                 if (typeof player.getVideoHeight === 'function') {
-                     currentHeight = player.getVideoHeight();
-                 }
-                 if (typeof player.getVideoData === 'function') {
+                if (typeof player.getPlaybackQuality === 'function') { currentQualityLabel = player.getPlaybackQuality(); }
+                if (typeof player.getVideoHeight === 'function') { currentHeight = player.getVideoHeight(); }
+                if (typeof player.getVideoData === 'function') {
                     const videoData = player.getVideoData();
                     currentItag = videoData?.itag;
-                    if (currentHeight === 0 && videoData?.height) {
-                        currentHeight = videoData.height;
-                    }
-                 }
+                    if (currentHeight === 0 && videoData?.height) { currentHeight = videoData.height; }
+                }
                 // console.log("[Inject] Current playback state:", { currentItag, currentQualityLabel, currentHeight });
+                // --- End Playback State ---
 
 
+                // --- Video Format Estimation (Same as v2.1) ---
                 let currentVideoFormat = null;
+                if (currentItag) { /* Find by itag */ currentVideoFormat = allFormats.find(f => f.itag === currentItag && f.mimeType?.startsWith('video/')); }
+                if (!currentVideoFormat && (currentHeight || currentQualityLabel)) { /* Estimate by height/quality */
+                    const potentialMatches = adaptiveFormats.filter(f => f.mimeType?.startsWith('video/') && ((currentHeight && f.height === currentHeight) || (currentQualityLabel && f.qualityLabel === currentQualityLabel)));
+                    if (potentialMatches.length > 0) { currentVideoFormat = potentialMatches.find(f => f.mimeType?.includes('av01')) || potentialMatches.find(f => f.mimeType?.includes('vp09')) || potentialMatches.find(f => f.mimeType?.includes('avc1')) || potentialMatches[0]; }
+                    else { const potentialRegularMatches = formats.filter(f => f.mimeType?.startsWith('video/') && ((currentHeight && f.height === currentHeight) || (currentQualityLabel && f.qualityLabel === currentQualityLabel))); if (potentialRegularMatches.length > 0) { currentVideoFormat = potentialRegularMatches.find(f => f.mimeType?.includes('av01')) || potentialRegularMatches.find(f => f.mimeType?.includes('vp09')) || potentialRegularMatches.find(f => f.mimeType?.includes('avc1')) || potentialRegularMatches[0]; } }
+                }
+                if (!currentVideoFormat) { /* Fallback */ currentVideoFormat = adaptiveFormats.find(f => f.mimeType?.includes('av01')) || adaptiveFormats.find(f => f.mimeType?.includes('vp09')) || adaptiveFormats.find(f => f.mimeType?.includes('avc1')) || formats.find(f => f.mimeType?.includes('av01')) || formats.find(f => f.mimeType?.includes('vp09')) || formats.find(f => f.mimeType?.includes('avc1')) || adaptiveFormats.find(f => f.mimeType?.startsWith('video/')) || formats.find(f => f.mimeType?.startsWith('video/')); }
+                // --- End Video Estimation ---
+
+
+                // ★★★ Audio Format Estimation (Revised with Bitrate Priority & Debugging) ★★★
                 let currentAudioFormat = null;
+                const allAudioFormats = allFormats.filter(f => f.mimeType?.startsWith('audio/'));
+                console.log(`[Inject] Found ${allAudioFormats.length} total audio formats.`); // Debug log
 
-                if (currentItag) {
-                    // console.log(`[Inject] Attempting to find video format by itag: ${currentItag}`);
-                    currentVideoFormat = allFormats.find(f => f.itag === currentItag && f.mimeType?.startsWith('video/'));
-                    // if (currentVideoFormat) console.log("[Inject] Found video format by ITAG:", currentVideoFormat);
-                    // else console.log("[Inject] Video format not found by ITAG. Proceeding to estimation.");
-                }
+                if (allAudioFormats.length > 0) {
+                    // Strategy: Prefer Opus, then AAC. Within each, prefer higher bitrate.
 
-                if (!currentVideoFormat && (currentHeight || currentQualityLabel)) {
-                    // console.log("[Inject] Estimating video format by height/qualityLabel...");
-                    const potentialMatches = adaptiveFormats.filter(f =>
-                        f.mimeType?.startsWith('video/') &&
-                        ((currentHeight && f.height === currentHeight) || (currentQualityLabel && f.qualityLabel === currentQualityLabel))
-                    );
-                    // console.log(`[Inject] Found ${potentialMatches.length} potential matches based on height/quality.`);
+                    const opusFormats = allAudioFormats.filter(f => f.mimeType?.includes('opus'));
+                    const aacFormats = allAudioFormats.filter(f => f.mimeType?.includes('mp4a')); // Typically AAC
+                    const otherAudioFormats = allAudioFormats.filter(f => !f.mimeType?.includes('opus') && !f.mimeType?.includes('mp4a'));
 
-                    if (potentialMatches.length > 0) {
-                        currentVideoFormat =
-                            potentialMatches.find(f => f.mimeType?.includes('av01')) ||
-                            potentialMatches.find(f => f.mimeType?.includes('vp09')) ||
-                            potentialMatches.find(f => f.mimeType?.includes('avc1')) ||
-                            potentialMatches[0];
-                         // console.log("[Inject] Estimated video format from potential matches:", currentVideoFormat);
-                    } else {
-                        // console.log("[Inject] No potential matches found by height/quality in adaptive formats.");
-                         const potentialRegularMatches = formats.filter(f =>
-                             f.mimeType?.startsWith('video/') &&
-                             ((currentHeight && f.height === currentHeight) || (currentQualityLabel && f.qualityLabel === currentQualityLabel))
-                         );
-                          if (potentialRegularMatches.length > 0) {
-                              currentVideoFormat =
-                                  potentialRegularMatches.find(f => f.mimeType?.includes('av01')) ||
-                                  potentialRegularMatches.find(f => f.mimeType?.includes('vp09')) ||
-                                  potentialRegularMatches.find(f => f.mimeType?.includes('avc1')) ||
-                                  potentialRegularMatches[0];
-                              // console.log("[Inject] Estimated video format from potential regular matches:", currentVideoFormat);
-                          }
+                    console.log(`[Inject] Audio formats breakdown: Opus(${opusFormats.length}), AAC(${aacFormats.length}), Other(${otherAudioFormats.length})`); // Debug log
+                    if (opusFormats.length > 0) opusFormats.forEach(f => console.log(` - Opus Candidate: itag=${f.itag}, bitrate=${f.bitrate}, quality=${f.audioQuality}`)); // Debug log
+                    if (aacFormats.length > 0) aacFormats.forEach(f => console.log(` - AAC Candidate: itag=${f.itag}, bitrate=${f.bitrate}, quality=${f.audioQuality}`));   // Debug log
+
+                    // Find the best Opus format (highest bitrate)
+                    let bestOpus = null;
+                    if (opusFormats.length > 0) {
+                        opusFormats.sort((a, b) => (b.bitrate || 0) - (a.bitrate || 0));
+                        bestOpus = opusFormats[0];
                     }
-                }
 
-                if (!currentVideoFormat) {
-                    // console.log("[Inject] Fallback: Finding best available video format...");
-                    currentVideoFormat =
-                        adaptiveFormats.find(f => f.mimeType?.includes('av01')) ||
-                        adaptiveFormats.find(f => f.mimeType?.includes('vp09')) ||
-                        adaptiveFormats.find(f => f.mimeType?.includes('avc1')) ||
-                        formats.find(f => f.mimeType?.includes('av01')) ||
-                        formats.find(f => f.mimeType?.includes('vp09')) ||
-                        formats.find(f => f.mimeType?.includes('avc1')) ||
-                        adaptiveFormats.find(f => f.mimeType?.startsWith('video/')) ||
-                        formats.find(f => f.mimeType?.startsWith('video/'));
-                    // if (currentVideoFormat) console.log("[Inject] Found video format via fallback:", currentVideoFormat);
-                }
+                    // Find the best AAC format (highest bitrate)
+                    let bestAac = null;
+                    if (aacFormats.length > 0) {
+                        aacFormats.sort((a, b) => (b.bitrate || 0) - (a.bitrate || 0));
+                        bestAac = aacFormats[0];
+                    }
 
-                currentAudioFormat = adaptiveFormats.find(f => f.mimeType?.startsWith('audio/opus')) ||
-                                    adaptiveFormats.find(f => f.mimeType?.startsWith('audio/mp4a')) ||
-                                    adaptiveFormats.find(f => f.mimeType?.startsWith('audio/')) ||
-                                    formats.find(f => f.mimeType?.startsWith('audio/'));
+                    // Find the best Other format (highest bitrate)
+                    let bestOther = null;
+                     if (otherAudioFormats.length > 0) {
+                         otherAudioFormats.sort((a, b) => (b.bitrate || 0) - (a.bitrate || 0));
+                         bestOther = otherAudioFormats[0];
+                     }
+
+                    // Prioritize: Best Opus > Best AAC > Best Other
+                    if (bestOpus) {
+                        currentAudioFormat = bestOpus;
+                        console.log("[Inject] Selected best Opus format:", currentAudioFormat); // Debug log
+                    } else if (bestAac) {
+                        currentAudioFormat = bestAac;
+                        console.log("[Inject] Selected best AAC format:", currentAudioFormat); // Debug log
+                    } else if (bestOther){
+                        currentAudioFormat = bestOther;
+                        console.log("[Inject] Selected best 'Other' audio format:", currentAudioFormat); // Debug log
+                    }
+                } else {
+                    console.warn("[Inject] No audio formats found in adaptive/regular lists.");
+                }
+                // --- End Audio Estimation ---
+
 
                 if (!currentVideoFormat && !currentAudioFormat) {
                      console.warn("[Inject] Could not determine any current video or audio format.");
@@ -149,6 +153,7 @@ if (window.codecInfoInjectListenerAttached) {
                      return;
                 }
 
+                // --- Extract Info (Same as before) ---
                 const videoCodecMatch = currentVideoFormat?.mimeType?.match(/codecs="([^,"]+)/);
                 const audioCodecMatch = currentAudioFormat?.mimeType?.match(/codecs="([^"]+)"/);
 
@@ -160,9 +165,12 @@ if (window.codecInfoInjectListenerAttached) {
                     width: currentVideoFormat?.width,
                     height: currentVideoFormat?.height,
                     fps: currentVideoFormat?.fps,
-                    bitrate: currentVideoFormat?.bitrate,
-                    itag: currentVideoFormat?.itag,
+                    bitrate: currentVideoFormat?.bitrate, // Video bitrate
+                    audioBitrate: currentAudioFormat?.bitrate, // Audio bitrate (add if needed)
+                    itag: currentVideoFormat?.itag, // Video itag
+                    audioItag: currentAudioFormat?.itag, // Audio itag (add if needed)
                     mimeType: currentVideoFormat?.mimeType,
+                    audioMimeType: currentAudioFormat?.mimeType, // Audio mimeType (add if needed)
                     audioSampleRate: currentAudioFormat?.audioSampleRate,
                     audioChannels: currentAudioFormat?.audioChannels,
                     colorInfo: currentVideoFormat?.colorInfo,
@@ -170,7 +178,9 @@ if (window.codecInfoInjectListenerAttached) {
                     isDash: streamingData.dashManifestUrl !== undefined,
                     isMsl: streamingData.hlsManifestUrl !== undefined,
                 };
-                 // console.log("[Inject] Final determined codecInfo:", codecInfo);
+                // --- End Extract Info ---
+
+                 console.log("[Inject] Final determined codecInfo (Audio logic improved):", codecInfo); // Debug log
 
             } else {
                 console.warn("[Inject] streamingData not found in playerResponse.");
@@ -188,4 +198,5 @@ if (window.codecInfoInjectListenerAttached) {
         window.postMessage({ type: "CODEC_INFO_RESULT", payload: codecInfo }, "*");
 
     }, false);
-}
+
+} // end of listener attachment check
